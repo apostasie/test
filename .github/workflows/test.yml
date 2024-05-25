@@ -90,6 +90,9 @@ jobs:
 
           # See note at the top
           sudo chown -R $(id -u)  /var/lib/docker/buildkit
+          ls -lA /var/lib/docker/buildkit
+          echo "==="
+          ls -lA /var/lib/docker
       - name: "Build dependencies"
         run: |
           mkdir -p ~/integration-images
