@@ -7,6 +7,107 @@ on:
   pull_request:
 
 jobs:
+  # Build here, with buildkit cache, and registry cache, for every platform we target
+  # Then commit them to local read-only registry, or local filesystem with cache commit?
+  # The load them
+  build-dependencies:
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4.1.6
+        with:
+          fetch-depth: 1
+      # Cache for images fetched by the build stage (golang, ubuntu, etc)
+      - name: Registry cache for build stage
+        id: cache-build-registry
+        uses: actions/cache@v4
+        with:
+          path:
+            ~/build-cache-registry
+          key: key-build-registry
+          save: always
+      # Cache for buildkit
+      - name: Buildkit cache for build stage
+        id: cache-build-buildkit
+        uses: actions/cache@v4
+        with:
+          path:
+            /var/lib/docker/buildkit
+          key: key-build-buildkit
+
+      - name: "Configure and start registry proxy cache"
+        run: |
+          REGISTRY_BUILD_CACHE="$HOME/build-cache-registry"
+          mkdir -p "$REGISTRY_BUILD_CACHE"
+
+          # Configure docker to use the mirror
+          sudo cp .github/config/daemon.json /etc/docker/
+          # Configure containerd to use the mirror
+          sudo mkdir -p /etc/containerd/certs.d/docker.io
+          sudo cp .github/config/hosts.toml /etc/containerd/certs.d/docker.io/
+          # Restart
+          sudo systemctl restart docker
+          sudo systemctl restart containerd
+
+          # Start the proxy cache (FIXME: workaround github secret protection - should be a secret - though it does not matter, it is a readonly token on a test account)
+          docker pull registry:2 >/dev/null
+          docker run -d --net bridge --restart always --name build-registry-mirror \
+            -e REGISTRY_PROXY_REMOTEURL=https://registry-1.docker.io \
+            -e REGISTRY_PROXY_USERNAME=dubogus \
+            -e REGISTRY_PROXY_PASSWORD="$(echo ZGNrcl9wYXRfUk8zdzV6UFdhWDdVWk1yRFh2NDRRYjU4ZVhnCg== | base64 -d)" \
+            --volume "$REGISTRY_BUILD_CACHE":/var/lib/registry -p 5000:5000 registry:2 >/dev/null
+          # Get curl
+          sudo apt-get update -qq
+          sudo apt-get install -qq curl
+          # Wait until the registry is ready
+          attempts=0
+          while ! curl localhost:5000 1>/dev/null 2>&1 && [ "$attempts" -lt 10 ] ; do
+            sleep 0.5
+            attempts=$((attempts + 1))
+          done
+          [ "$attempts" -lt 10 ] || {
+            >&2 printf "Failed contacting mirror in less than five seconds. Giving up."
+            exit 1
+          }
+          # We are ready
+          echo "===== TESTING ===="
+          ls -lA "$REGISTRY_BUILD_CACHE"
+          echo "===== Was there some cache already? SHOULD BE ^ ===="
+          time docker pull alpine || true
+          docker logs build-registry-mirror
+          ls -lA "$REGISTRY_BUILD_CACHE"
+
+      - name: "Build dependencies"
+        run: |
+          mkdir -p ~/integration-images
+
+          build_for(){
+            local ubuntu="$1"
+            local containerd="$2"
+            tag="${ubuntu}-${containerd}"
+            DOCKER_BUILDKIT=1 docker build \
+              -t test-integration:"$tag" \
+              --target test-integration \
+              --build-arg UBUNTU_VERSION="${ubuntu}" \
+              --build-arg CONTAINERD_VERSION="${containerd}" .
+            docker save test-integration:"$tag" > ~/integration-images/test-integration-"$tag".tar.gz
+          }
+
+          build_for 20.04 v1.6.31
+          build_for 20.04 v1.7.6
+          build_for 22.04 v1.7.6
+          build_for 24.04 v1.7.6
+          build_for 24.04 main
+
+      - name: Cache for build artifacts
+        id: cache-artifacts
+        uses: actions/cache/save@v4
+        with:
+          path:
+            ~/integration-images
+          key: key-build-artifacts
+
   test-integration:
     needs: build-dependencies
     runs-on: "ubuntu-${{ matrix.ubuntu }}"
@@ -30,112 +131,18 @@ jobs:
       CONTAINERD_VERSION: "${{ matrix.containerd }}"
 
     steps:
-      - name: cache-artifacts
+      - name: Cache for build artifacts
         id: cache-artifacts
         uses: actions/cache/restore@v4
         with:
           path:
             ~/integration-images
-          key: "${{ matrix.ubuntu }}-${{ matrix.containerd }}"
-      - name: "Configure and start buldkit cache"
+          key: key-build-artifacts
+
+      - name: "DO"
         run: |
           # ${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}
           ls -lA ~/integration-images
-
-
-  # Build here, with buildkit cache, and registry cache, for every platform we target
-  # Then commit them to local read-only registry, or local filesystem with cache commit?
-  # The load them
-  build-dependencies:
-    runs-on: "ubuntu-24.04"
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - ubuntu: 20.04
-            containerd: v1.6.31
-          - ubuntu: 20.04
-            containerd: v1.7.16
-          - ubuntu: 22.04
-            containerd: v1.7.16
-          - ubuntu: 24.04
-            containerd: v1.7.16
-          - ubuntu: 24.04
-            containerd: main
-    env:
-      UBUNTU_VERSION: "${{ matrix.ubuntu }}"
-      CONTAINERD_VERSION: "${{ matrix.containerd }}"
-
-    steps:
-      - uses: actions/checkout@v4.1.6
-        with:
-          fetch-depth: 1
-      # Cache for images fetched by the build stage (golang, ubuntu, etc)
-      - name: cache-registry-build
-        id: cache-registry-build
-        uses: actions/cache@v4
-        with:
-          path:
-            ~/registry-build-mirror
-          key: common-proxy-cache
-          save: always
-      - name: "Configure and start registry proxy cache"
-        run: |
-          echo ${{ steps.cache-registry-build.common-proxy-cache }}
-          mkdir -p ~/registry-build-mirror
-          sudo cp .github/config/daemon.json /etc/docker/
-          # Configure containerd to use the proxy cache
-          sudo mkdir -p /etc/containerd/certs.d/docker.io
-          sudo cp .github/config/hosts.toml /etc/containerd/certs.d/docker.io/
-          # Restart services
-          sudo systemctl restart docker
-          sudo systemctl restart containerd
-          # Start the proxy cache (FIXME: workaround github secret protection - should be a secret - though it does not matter, it is a readonly token on a test account)
-          docker pull registry:2 >/dev/null
-          docker run -d --net bridge --restart always --name registry-proxy-cache \
-            -e REGISTRY_PROXY_REMOTEURL=https://registry-1.docker.io \
-            -e REGISTRY_PROXY_USERNAME=dubogus \
-            -e REGISTRY_PROXY_PASSWORD="$(echo ZGNrcl9wYXRfUk8zdzV6UFdhWDdVWk1yRFh2NDRRYjU4ZVhnCg== | base64 -d)" \
-            --volume "$HOME"/registry-build-mirror:/var/lib/registry -p 5000:5000 registry:2 >/dev/null
-          # Get curl
-          sudo apt-get update -qq
-          sudo apt-get install -qq curl
-          # Wait until it is ready
-          attempts=0
-          while ! curl localhost:5000 1>/dev/null 2>&1 && [ "$attempts" -lt 10 ] ; do
-            sleep 0.5
-            attempts=$((attempts + 1))
-          done
-          [ "$attempts" -lt 10 ] || {
-            >&2 printf "Failed contacting proxy server in less than five seconds. Giving up"
-            exit 1
-          }
-          # We are ready
-          echo "===== TESTING ===="
-          ls -lA ~/registry-build-mirror
-          echo "===== Was there some cache already? SHOULD BE ^ ===="
-          time docker pull alpine || true
-          docker logs registry-proxy-cache
-          ls -lA ~/registry-build-mirror
-      - name: "Build dependencies"
-        run: |
-          tag="${UBUNTU_VERSION}-${CONTAINERD_VERSION}"
-          DOCKER_BUILDKIT=1 docker build \
-            -t test-integration:"$tag" \
-            --target test-integration \
-            --build-arg UBUNTU_VERSION="${UBUNTU_VERSION}" \
-            --build-arg CONTAINERD_VERSION="${CONTAINERD_VERSION}" .
-          mkdir -p ~/integration-images
-          docker save test-integration:"$tag" > test-integration-"$tag".tar.gz
-
-      - name: cache-artifacts
-        id: cache-artifacts
-        uses: actions/cache/save@v4
-        with:
-          path:
-            ~/integration-images
-          key: "${{ matrix.ubuntu }}-${{ matrix.containerd }}"
 
 
 
