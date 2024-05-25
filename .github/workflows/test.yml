@@ -7,6 +7,42 @@ on:
   pull_request:
 
 jobs:
+  test-integration:
+    needs: build-dependencies
+    runs-on: "ubuntu-${{ matrix.ubuntu }}"
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ubuntu: 20.04
+            containerd: v1.6.31
+          - ubuntu: 20.04
+            containerd: v1.7.16
+          - ubuntu: 22.04
+            containerd: v1.7.16
+          - ubuntu: 24.04
+            containerd: v1.7.16
+          - ubuntu: 24.04
+            containerd: main
+    env:
+      UBUNTU_VERSION: "${{ matrix.ubuntu }}"
+      CONTAINERD_VERSION: "${{ matrix.containerd }}"
+
+    steps:
+      - name: cache-artifacts
+        id: cache-artifacts
+        uses: actions/cache/restore@v4
+        with:
+          path:
+            ~/integration-images
+          key: "${{ matrix.ubuntu }}-${{ matrix.containerd }}"
+      - name: "Configure and start buldkit cache"
+        run: |
+          # ${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}
+          ls -lA ~/integration-images
+
+
   # Build here, with buildkit cache, and registry cache, for every platform we target
   # Then commit them to local read-only registry, or local filesystem with cache commit?
   # The load them
@@ -35,30 +71,53 @@ jobs:
       - uses: actions/checkout@v4.1.6
         with:
           fetch-depth: 1
+      # Cache for images fetched by the build stage (golang, ubuntu, etc)
       - name: cache-registry-build
         id: cache-registry-build
         uses: actions/cache@v4
         with:
           path:
-            ~/registry-proxy-cache
+            ~/registry-build-mirror
           key: common-proxy-cache
+          save: always
       - name: "Configure and start registry proxy cache"
         run: |
-          # Some of it is platform INDEPENDENT
-          # Some of it is Ubuntu specific
-          # Some of it is Nerdctl independent
-          # Some of it is Nerdctl specific
-          mkdir -p ~/registry-proxy-cache
-          echo "===== Testing ===="
-          ls -lA ~/registry-proxy-cache
+          echo ${{ steps.cache-registry-build.common-proxy-cache }}
+          mkdir -p ~/registry-build-mirror
+          sudo cp .github/config/daemon.json /etc/docker/
+          # Configure containerd to use the proxy cache
+          sudo mkdir -p /etc/containerd/certs.d/docker.io
+          sudo cp .github/config/hosts.toml /etc/containerd/certs.d/docker.io/
+          # Restart services
+          sudo systemctl restart docker
+          sudo systemctl restart containerd
+          # Start the proxy cache (FIXME: workaround github secret protection - should be a secret - though it does not matter, it is a readonly token on a test account)
+          docker pull registry:2 >/dev/null
+          docker run -d --net bridge --restart always --name registry-proxy-cache \
+            -e REGISTRY_PROXY_REMOTEURL=https://registry-1.docker.io \
+            -e REGISTRY_PROXY_USERNAME=dubogus \
+            -e REGISTRY_PROXY_PASSWORD="$(echo ZGNrcl9wYXRfUk8zdzV6UFdhWDdVWk1yRFh2NDRRYjU4ZVhnCg== | base64 -d)" \
+            --volume "$HOME"/registry-build-mirror:/var/lib/registry -p 5000:5000 registry:2 >/dev/null
+          # Get curl
+          sudo apt-get update -qq
+          sudo apt-get install -qq curl
+          # Wait until it is ready
+          attempts=0
+          while ! curl localhost:5000 1>/dev/null 2>&1 && [ "$attempts" -lt 10 ] ; do
+            sleep 0.5
+            attempts=$((attempts + 1))
+          done
+          [ "$attempts" -lt 10 ] || {
+            >&2 printf "Failed contacting proxy server in less than five seconds. Giving up"
+            exit 1
+          }
+          # We are ready
+          echo "===== TESTING ===="
+          ls -lA ~/registry-build-mirror
           echo "===== Was there some cache already? SHOULD BE ^ ===="
-          echo "===== Testing ===="
-          echo bla >> ~/registry-proxy-cache/first-step
-          echo "===== Testing ===="
-          ls -lA ~/registry-proxy-cache
-          echo "===== Testing ===="
-          echo "${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}"
-          echo "done reg first step"
+          time docker pull alpine || true
+          docker logs registry-proxy-cache
+          ls -lA ~/registry-build-mirror
       - name: "Build dependencies"
         run: |
           tag="${UBUNTU_VERSION}-${CONTAINERD_VERSION}"
@@ -77,6 +136,8 @@ jobs:
           path:
             ~/integration-images
           key: "${{ matrix.ubuntu }}-${{ matrix.containerd }}"
+
+
 
 #  integration:
 #    needs: build-dependencies
