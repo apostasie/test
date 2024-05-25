@@ -26,7 +26,7 @@ jobs:
           path:
             ~/build-cache-registry
           key: key-build-registry
-      # Cache for buildkit
+      # Cache for buildkit (NOT USED right now - waiting for some speed assessment to figure out if it is worth it)
       - name: Buildkit cache for build stage
         id: cache-build-buildkit
         uses: actions/cache@v4
@@ -48,10 +48,10 @@ jobs:
           REGISTRY_BUILD_CACHE="$HOME/build-cache-registry"
           mkdir -p "$REGISTRY_BUILD_CACHE"
           # actions/cache cannot save root owned resource, so, we chown AFTER and BEFORE to workaround 
-          mkdir -p ~/build-cache-buildkit
-          sudo rm -Rf /var/lib/docker/buildkit
-          sudo ln -s ~/build-cache-buildkit /var/lib/docker/buildkit
-          sudo chown -R root ~/build-cache-buildkit
+          #mkdir -p ~/build-cache-buildkit
+          #sudo rm -Rf /var/lib/docker/buildkit
+          #sudo ln -s ~/build-cache-buildkit /var/lib/docker/buildkit
+          #sudo chown -R root ~/build-cache-buildkit
 
           # Configure docker to use the mirror
           sudo cp .github/config/daemon.json /etc/docker/
@@ -84,11 +84,7 @@ jobs:
           }
 
           # See note at the top
-          sudo chown -R 1001 ~/build-cache-buildkit
-
-          echo "==="
-          ls -lA ~/build-cache-buildkit
-          echo "==="
+          # sudo chown -R 1001 ~/build-cache-buildkit
       - name: "Build dependencies"
         run: |
           mkdir -p ~/integration-images
