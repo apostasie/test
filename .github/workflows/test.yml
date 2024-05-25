@@ -65,8 +65,9 @@ jobs:
           mkdir -p ~/integration-images
           docker save test-integration:"$tag" > test-integration-"$tag".tar.gz
 
-      - uses: actions/cache/save@v4
-        id: integration-image
+      - name: cache-artifacts
+        id: cache-artifacts
+        uses: actions/cache/save@v4
         with:
           path:
             ~/integration-images
@@ -98,20 +99,23 @@ steps:
       - uses: actions/checkout@v4.1.6
         with:
           fetch-depth: 1
-      - uses: actions/cache@v4
+      - name: cache-reg
+        id: cache-reg
+        uses: actions/cache@v4
         with:
           path:
             ~/registry-proxy-cache
           key: "${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}"-proxy-cache
-          # save-always: true
-      - uses: actions/cache@v4
+      - name: cache-bk
+        id: cache-bk
+        uses: actions/cache@v4
         with:
           path:
             /var/lib/docker/buildkit
           key: "${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}"-bk-cache
-          # save-always: true
-      - uses: actions/cache/restore@v4
-        id: integration-image
+      - name: cache-artifacts
+        id: cache-artifacts
+        uses: actions/cache/restore@v4
         with:
           path:
             ~/integration-images
