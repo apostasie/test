@@ -75,56 +75,57 @@ jobs:
             ~/integration-images
           key: "${{ matrix.ubuntu }}-${{ matrix.containerd }}"
 
-steps:
-  test-integration:
+  integration:
     needs: build-dependencies
-    runs-on: "ubuntu-${{ matrix.ubuntu }}"
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - ubuntu: 20.04
-            containerd: v1.6.31
-          - ubuntu: 20.04
-            containerd: v1.7.16
-          - ubuntu: 22.04
-            containerd: v1.7.16
-          - ubuntu: 24.04
-            containerd: v1.7.16
-          - ubuntu: 24.04
-            containerd: main
-    env:
-      UBUNTU_VERSION: "${{ matrix.ubuntu }}"
-      CONTAINERD_VERSION: "${{ matrix.containerd }}"
     steps:
-      - uses: actions/checkout@v4.1.6
-        with:
-          fetch-depth: 1
-      - name: cache-registry-mirror
-        id: cache-registry-mirror
-        uses: actions/cache@v4
-        with:
-          path:
-            ~/registry-proxy-cache
-          key: "${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}"-proxy-cache
-#      - name: cache-bk
-        #        id: cache-bk
-        #uses: actions/cache@v4
-          #with:
-            #path:
-            #/var/lib/docker/buildkit
-          #key: "${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}"-bk-cache
-        #- name: cache-artifacts
-        #id: cache-artifacts
-        #uses: actions/cache/restore@v4
-          #with:
-            #path:
-            ##~/integration-images
-      - name: "Configure and start buldkit cache"
-        run: |
-          # ${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}
-          ls -lA ~/integration-images
- 
+      test-integration:
+        runs-on: "ubuntu-${{ matrix.ubuntu }}"
+        timeout-minutes: 40
+        strategy:
+          fail-fast: false
+          matrix:
+            include:
+              - ubuntu: 20.04
+                containerd: v1.6.31
+              - ubuntu: 20.04
+                containerd: v1.7.16
+              - ubuntu: 22.04
+                containerd: v1.7.16
+              - ubuntu: 24.04
+                containerd: v1.7.16
+              - ubuntu: 24.04
+                containerd: main
+        env:
+          UBUNTU_VERSION: "${{ matrix.ubuntu }}"
+          CONTAINERD_VERSION: "${{ matrix.containerd }}"
+        steps:
+          - uses: actions/checkout@v4.1.6
+            with:
+              fetch-depth: 1
+          - name: cache-registry-mirror
+            id: cache-registry-mirror
+            uses: actions/cache@v4
+            with:
+              path:
+                ~/registry-proxy-cache
+              key: "${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}"-proxy-cache
+          - name: cache-bk
+            id: cache-bk
+            uses: actions/cache@v4
+            with:
+              path:
+                /var/lib/docker/buildkit
+              key: "${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}"-bk-cache
+          - name: cache-artifacts
+            id: cache-artifacts
+            uses: actions/cache/restore@v4
+            with:
+              path:
+                ~/integration-images
+          - name: "Configure and start buldkit cache"
+            run: |
+              # ${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}
+              ls -lA ~/integration-images
+     
 
             
