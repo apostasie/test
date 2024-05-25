@@ -48,7 +48,7 @@ jobs:
           REGISTRY_BUILD_CACHE="$HOME/build-cache-registry"
           mkdir -p "$REGISTRY_BUILD_CACHE"
           # actions/cache cannot save root owned resource, so, we chown AFTER and BEFORE to workaround 
-          sudo chmod o+x /var/lib/docker
+          sudo chmod a+x /var/lib/docker
           sudo chown -R root /var/lib/docker/buildkit
 
           # Configure docker to use the mirror
@@ -83,7 +83,6 @@ jobs:
 
           # See note at the top
           sudo chown -R 1001 /var/lib/docker/buildkit
-          sudo ls -lA /var
           sudo ls -lA /var/lib
           sudo ls -lA /var/lib/docker
           sudo ls -lA /var/lib/docker/buildkit
