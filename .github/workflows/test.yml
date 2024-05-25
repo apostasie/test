@@ -18,10 +18,11 @@ jobs:
       - uses: actions/checkout@v4.1.6
         with:
           fetch-depth: 1
+
       # Cache for images fetched by the build stage (golang, ubuntu, etc)
       - name: Registry cache for build stage
         id: cache-build-registry
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path:
             ~/build-cache-registry
@@ -30,19 +31,11 @@ jobs:
       # Cache for buildkit (NOT USED right now - waiting for some speed assessment to figure out if it is worth it)
       - name: Buildkit cache for build stage
         id: cache-build-buildkit
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path:
             ~/build-cache-buildkit
           key: key-build-buildkit
-
-      - name: Cache for build artifacts
-        id: cache-artifacts
-        uses: actions/cache@v4
-        with:
-          path:
-            ~/integration-images
-          key: key-build-artifacts
 
       - name: "Configure and start registry proxy cache"
         run: |
