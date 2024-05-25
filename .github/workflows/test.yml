@@ -26,7 +26,6 @@ jobs:
           path:
             ~/build-cache-registry
           key: key-build-registry
-          save: always
       # Cache for buildkit
       - name: Buildkit cache for build stage
         id: cache-build-buildkit
