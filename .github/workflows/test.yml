@@ -34,6 +34,7 @@ jobs:
         run: |
           # ${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}
           mkdir -p ~/registry-proxy-cache
+          sudo mkdir -p /var/lib/docker/buildkit
           echo "===== Testing ===="
           ls -lA ~/registry-proxy-cache
           echo "===== Was there some cache already? SHOULD BE ^ ===="
