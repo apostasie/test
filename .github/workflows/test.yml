@@ -36,6 +36,14 @@ jobs:
             /var/lib/docker/buildkit
           key: key-build-buildkit
 
+      - name: Cache for build artifacts
+        id: cache-artifacts
+        uses: actions/cache@v4
+        with:
+          path:
+            ~/integration-images
+          key: key-build-artifacts
+
       - name: "Configure and start registry proxy cache"
         run: |
           REGISTRY_BUILD_CACHE="$HOME/build-cache-registry"
@@ -85,6 +93,7 @@ jobs:
       - name: "Build dependencies"
         run: |
           mkdir -p ~/integration-images
+          rm -f ~/integration-images/*
 
           build_for(){
             local ubuntu="$1"
@@ -103,14 +112,6 @@ jobs:
           build_for 22.04 v1.7.6
           build_for 24.04 v1.7.6
           build_for 24.04 main
-
-      - name: Cache for build artifacts
-        id: cache-artifacts
-        uses: actions/cache/save@v4
-        with:
-          path:
-            ~/integration-images
-          key: key-build-artifacts
 
   test-integration:
     needs: build-dependencies
