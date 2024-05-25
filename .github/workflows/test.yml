@@ -111,6 +111,8 @@ jobs:
           build_for 22.04 v1.7.6
           build_for 24.04 v1.7.6
           build_for 24.04 main
+          # Force a cache write
+          date > ~/integration-images/.timestamp
 
   test-integration:
     needs: build-dependencies
