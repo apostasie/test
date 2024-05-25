@@ -4,29 +4,34 @@ on:
   push:
     branches:
       - main
+      - 'release/**'
   pull_request:
+
+env:
+  GO_VERSION: 1.22.x
 
 jobs:
   # Build here, with buildkit cache, and registry cache, for every platform we target
   # Then commit them to local read-only registry, or local filesystem with cache commit?
   # The load them
-  build-dependencies:
+  test-integration-build:
     runs-on: "ubuntu-24.04"
     timeout-minutes: 40
+    env:
+      CONTAINERD_VERSION: "${{ matrix.containerd }}"
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - containerd: v1.6.32
+          - containerd: v1.7.17
+          - containerd: main
 
     steps:
       - uses: actions/checkout@v4.1.6
         with:
           fetch-depth: 1
-
-      # We are going to store these for dependent jobs
-      - name: Cache for build artifacts
-        id: cache-artifacts
-        uses: actions/cache@v4
-        with:
-          path:
-            ~/integration-images
-          key: key-build-artifacts-${{ github.run_id }}
 
       # Cache for images fetched by the build stage (golang, ubuntu, etc)
       - name: Registry cache for build stage
@@ -37,18 +42,7 @@ jobs:
             ~/build-cache-registry
           key: key-build-registry-${{ github.run_id }}
           restore-keys: |
-            key-build-registry
-
-      # Cache for buildkit (NOT USED right now - waiting for some speed assessment to figure out if it is worth it)
-      - name: Buildkit cache for build stage
-        id: cache-build-buildkit
-        uses: actions/cache@v4
-        with:
-          path:
-            ~/build-cache-buildkit
-          key: key-build-buildkit-${{ github.sha }} #-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            key-build-buildkit
+            key-build-registry-
 
       - name: "Configure and start registry proxy cache"
         run: |
@@ -92,35 +86,71 @@ jobs:
 
           # See note at the top
           # sudo chown -R 1001 ~/build-cache-buildkit
+
+
+      - name: "Prepare"
+        run: |
+          echo "CACHE_TIMESTAMP=$(date --rfc-3339=date)" >> "$GITHUB_ENV"
+
+      # Load cache and see if we have what we need in there
+      - name: "Restore persistent cache"
+        id: cache-load
+        uses: actions/cache/restore@v4
+        with:
+          path:
+            ~/images-cache
+          # Cache key will change (eg: cache will be invalidated) if:
+          # - Dockerfile, or any Dockerfile.d/* file is being changed
+          # - cache is per day
+          # - this means obviously that containerd main will be at max one day old
+          # - obviously also means we are rebuilding everything once a day, including stuff that has not changed
+          key:
+            key-build-artifacts-${{ hashFiles('Dockerfile') }}-${{ hashFiles('Dockerfile.d/**') }}-${{ env.CONTAINERD_VERSION }}-${{ env.CACHE_TIMESTAMP }}
+
       - name: "Build dependencies"
         run: |
-          mkdir -p ~/integration-images
-          rm -f ~/integration-images/*
-
-          build_for(){
-            local ubuntu="$1"
-            local containerd="$2"
-            tag="${ubuntu}-${containerd}"
+          # Simple helper to build all dependencies for a given containerd version and save it in a tarball
+          build_dependencies(){
+            local version="$1"
+            local destination="$2"
             DOCKER_BUILDKIT=1 docker build \
-              -t test-integration:"$tag" \
-              --target test-integration \
-              --build-arg UBUNTU_VERSION="${ubuntu}" \
-              --build-arg CONTAINERD_VERSION="${containerd}" .
-            docker save test-integration:"$tag" > ~/integration-images/test-integration-"$tag".tar.gz
+              -t prebuilt \
+              --target build-all-dependencies \
+              --build-arg CONTAINERD_VERSION="$version" .
+            docker save prebuilt > "$destination"
           }
 
-          build_for 20.04 v1.6.31
-          build_for 20.04 v1.7.6
-          build_for 22.04 v1.7.6
-          build_for 24.04 v1.7.6
-          build_for 24.04 main
-          # Force a cache write
-          date > ~/integration-images/.timestamp
+          mkdir -p ~/images-cache
+          tarpath=~/images-cache/dependencies-build.tar.gz
+          # If it does not exist in the cache, build it
+          [ -e "$tarpath" ] || {
+            build_dependencies "$CONTAINERD_VERSION" "$tarpath"
+          }
 
+      # If we had no cache hit at the restore stage, then create an entry
+      - name: "Save persistent cache"
+        if: ${{ steps.cache-load.outputs.cache-hit != 'true' }}
+        id: cache-save
+        uses: actions/cache/save@v4
+        with:
+          path:
+            ~/images-cache
+          key:
+            ${{ steps.cache-load.outputs.cache-primary-key }}
+
+      # Upload it for the next job
+      - name: "Upload artifacts for next jobs"
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependencies-${{ env.CONTAINERD_VERSION }}
+          overwrite: true
+          compression-level: 0
+          path:
+            ~/images-cache/dependencies-build.tar.gz
 
 
   test-integration:
-    needs: build-dependencies
+    needs: test-integration-build
     runs-on: "ubuntu-${{ matrix.ubuntu }}"
     timeout-minutes: 40
     strategy:
@@ -128,13 +158,13 @@ jobs:
       matrix:
         include:
           - ubuntu: 20.04
-            containerd: v1.6.31
+            containerd: v1.6.32
           - ubuntu: 20.04
-            containerd: v1.7.16
+            containerd: v1.7.17
           - ubuntu: 22.04
-            containerd: v1.7.16
+            containerd: v1.7.17
           - ubuntu: 24.04
-            containerd: v1.7.16
+            containerd: v1.7.17
           - ubuntu: 24.04
             containerd: main
     env:
@@ -142,18 +172,17 @@ jobs:
       CONTAINERD_VERSION: "${{ matrix.containerd }}"
 
     steps:
-      - name: Cache for build artifacts
-        id: cache-artifacts
-        uses: actions/cache/restore@v4
+      - name: "Download artifact"
+        uses: actions/download-artifact@v4
         with:
+          name: dependencies-${{ env.CONTAINERD_VERSION }}
           path:
-            ~/integration-images
-          key: key-build-artifacts-${{ github.sha }} # ${{ github.run_id }}-${{ github.run_attempt }}
-
+            ~/images-cache/dependencies-build.tar.gz
       - name: "DO"
         run: |
-          # ${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}
-          ls -lA ~/integration-images
+          ls -lA ~/
+          ls -lA ~/images-cache
+          exit 2
 
 
 
@@ -166,13 +195,13 @@ jobs:
 #      matrix:
 #        include:
 #          - ubuntu: 20.04
-#            containerd: v1.6.31
+#            containerd: v1.6.32
 #          - ubuntu: 20.04
-#            containerd: v1.7.16
+#            containerd: v1.7.17
 #          - ubuntu: 22.04
-#            containerd: v1.7.16
+#            containerd: v1.7.17
 #          - ubuntu: 24.04
-#            containerd: v1.7.16
+#            containerd: v1.7.17
 #          - ubuntu: 24.04
 #            containerd: main
 #    env:
