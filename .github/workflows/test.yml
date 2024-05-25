@@ -108,19 +108,19 @@ steps:
           path:
             ~/registry-proxy-cache
           key: "${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}"-proxy-cache
-      - name: cache-bk
-        id: cache-bk
-        uses: actions/cache@v4
-        with:
-          path:
-            /var/lib/docker/buildkit
-          key: "${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}"-bk-cache
-      - name: cache-artifacts
-        id: cache-artifacts
-        uses: actions/cache/restore@v4
-        with:
-          path:
-            ~/integration-images
+#      - name: cache-bk
+        #        id: cache-bk
+        #uses: actions/cache@v4
+          #with:
+            #path:
+            #/var/lib/docker/buildkit
+          #key: "${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}"-bk-cache
+        #- name: cache-artifacts
+        #id: cache-artifacts
+        #uses: actions/cache/restore@v4
+          #with:
+            #path:
+            ##~/integration-images
       - name: "Configure and start buldkit cache"
         run: |
           # ${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}
