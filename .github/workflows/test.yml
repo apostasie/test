@@ -79,16 +79,10 @@ jobs:
             >&2 printf "Failed contacting mirror in less than five seconds. Giving up."
             exit 1
           }
-          # We are ready
-          echo "===== TESTING ===="
-          ls -lA "$REGISTRY_BUILD_CACHE"
-          echo "===== Was there some cache already? SHOULD BE ^ ===="
-          time docker pull alpine || true
-          docker logs build-registry-mirror
-          ls -lA "$REGISTRY_BUILD_CACHE"
 
           # See note at the top
-          sudo chown -R $(id -u)  /var/lib/docker/buildkit
+          id
+          sudo chown -R $(id -u) /var/lib/docker/buildkit
           ls -lA /var/lib/docker/buildkit
           echo "==="
           ls -lA /var/lib/docker
