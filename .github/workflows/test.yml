@@ -32,6 +32,9 @@ jobs:
       CONTAINERD_VERSION: "${{ matrix.containerd }}"
 
     steps:
+      - uses: actions/checkout@v4.1.6
+        with:
+          fetch-depth: 1
       - name: cache-registry-build
         id: cache-registry-build
         uses: actions/cache@v4
@@ -97,9 +100,6 @@ jobs:
 #      UBUNTU_VERSION: "${{ matrix.ubuntu }}"
 #      CONTAINERD_VERSION: "${{ matrix.containerd }}"
 #    steps:
-#      - uses: actions/checkout@v4.1.6
-#        with:
-#          fetch-depth: 1
 #      - name: cache-registry-mirror
 #        id: cache-registry-mirror
 #        uses: actions/cache@v4
