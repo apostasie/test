@@ -27,7 +27,7 @@ jobs:
         with:
           path: |
             ~/registry-proxy-cache
-            /var/lib/docker/buildkit
+#            /var/lib/docker/buildkit
           key: always
           # save-always: true
       - name: "Configure and start proxy cache"
