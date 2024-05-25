@@ -7,7 +7,74 @@ on:
   pull_request:
 
 jobs:
+  # Build here, with buildkit cache, and registry cache, for every platform we target
+  # Then commit them to local read-only registry, or local filesystem with cache commit?
+  # The load them
+  build-dependencies:
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ubuntu: 20.04
+            containerd: v1.6.31
+          - ubuntu: 20.04
+            containerd: v1.7.16
+          - ubuntu: 22.04
+            containerd: v1.7.16
+          - ubuntu: 24.04
+            containerd: v1.7.16
+          - ubuntu: 24.04
+            containerd: main
+    env:
+      UBUNTU_VERSION: "${{ matrix.ubuntu }}"
+      CONTAINERD_VERSION: "${{ matrix.containerd }}"
+
+    steps:
+      - uses: actions/cache@v4
+        with:
+          path:
+            ~/registry-proxy-cache
+          key: common-proxy-cache
+      - name: "Configure and start registry proxy cache"
+        run: |
+          # Some of it is platform INDEPENDENT
+          # Some of it is Ubuntu specific
+          # Some of it is Nerdctl independent
+          # Some of it is Nerdctl specific
+          mkdir -p ~/registry-proxy-cache
+          echo "===== Testing ===="
+          ls -lA ~/registry-proxy-cache
+          echo "===== Was there some cache already? SHOULD BE ^ ===="
+          echo "===== Testing ===="
+          echo bla >> ~/registry-proxy-cache/first-step
+          echo "===== Testing ===="
+          ls -lA ~/registry-proxy-cache
+          echo "===== Testing ===="
+          echo "${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}"
+          echo "done reg first step"
+      - name: "Build dependencies"
+        run: |
+          tag="${UBUNTU_VERSION}-${CONTAINERD_VERSION}"
+          DOCKER_BUILDKIT=1 docker build \
+            -t test-integration:"$tag" \
+            --target test-integration \
+            --build-arg UBUNTU_VERSION="${UBUNTU_VERSION}" \
+            --build-arg CONTAINERD_VERSION="${CONTAINERD_VERSION}" .
+          mkdir -p ~/integration-images
+          docker save test-integration:"$tag" > test-integration-"$tag".tar.gz
+
+      - uses: actions/cache/save@v4
+        id: integration-image
+        with:
+          path:
+            ~/integration-images
+          key: "${{ matrix.ubuntu }}-${{ matrix.containerd }}"
+
+steps:
   test-integration:
+    needs: build-dependencies
     runs-on: "ubuntu-${{ matrix.ubuntu }}"
     timeout-minutes: 40
     strategy:
@@ -15,7 +82,15 @@ jobs:
       matrix:
         include:
           - ubuntu: 20.04
+            containerd: v1.6.31
+          - ubuntu: 20.04
             containerd: v1.7.16
+          - ubuntu: 22.04
+            containerd: v1.7.16
+          - ubuntu: 24.04
+            containerd: v1.7.16
+          - ubuntu: 24.04
+            containerd: main
     env:
       UBUNTU_VERSION: "${{ matrix.ubuntu }}"
       CONTAINERD_VERSION: "${{ matrix.containerd }}"
@@ -27,21 +102,23 @@ jobs:
         with:
           path:
             ~/registry-proxy-cache
-            /var/lib/docker/buildkit
-          key: always
+          key: "${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}"-proxy-cache
           # save-always: true
-      - name: "Configure and start proxy cache"
+      - uses: actions/cache@v4
+        with:
+          path:
+            /var/lib/docker/buildkit
+          key: "${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}"-bk-cache
+          # save-always: true
+      - uses: actions/cache/restore@v4
+        id: integration-image
+        with:
+          path:
+            ~/integration-images
+      - name: "Configure and start buldkit cache"
         run: |
           # ${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}
-          mkdir -p ~/registry-proxy-cache
-          sudo mkdir -p /var/lib/docker/buildkit
-          echo "===== Testing ===="
-          ls -lA ~/registry-proxy-cache
-          echo "===== Was there some cache already? SHOULD BE ^ ===="
-          echo "===== Testing ===="
-          echo bla >> ~/registry-proxy-cache/fooofooo
-          echo "===== Testing ===="
-          ls -lA ~/registry-proxy-cache
-          echo "===== Testing ===="
-          echo "${{ env.UBUNTU_VERSION }}-${{ env.CONTAINERD_VERSION }}"
-          echo "done"
+          ls -lA ~/integration-images
+ 
+
+            
