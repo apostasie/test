@@ -81,8 +81,12 @@ jobs:
           }
 
           # See note at the top
-          id
-          sudo chown -R $(id -u) /var/lib/docker/buildkit
+          sudo chown -R 1001 /var/lib/docker/buildkit
+          sudo ls -lA /var
+          sudo ls -lA /var/lib
+          sudo ls -lA /var/lib/docker
+          sudo ls -lA /var/lib/docker/buildkit
+          echo "==="
           ls -lA /var/lib/docker/buildkit
           echo "==="
           ls -lA /var/lib/docker
