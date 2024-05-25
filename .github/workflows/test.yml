@@ -19,23 +19,36 @@ jobs:
         with:
           fetch-depth: 1
 
+      # We are going to store these for dependent jobs
+      - name: Cache for build artifacts
+        id: cache-artifacts
+        uses: actions/cache@v4
+        with:
+          path:
+            ~/integration-images
+          key: key-build-artifacts-${{ github.run_id }}
+
       # Cache for images fetched by the build stage (golang, ubuntu, etc)
       - name: Registry cache for build stage
         id: cache-build-registry
-        uses: actions/cache/restore@v4
+        uses: actions/cache@v4
         with:
           path:
             ~/build-cache-registry
-          key: key-build-registry-${{ hashFiles('') }}
+          key: key-build-registry-${{ github.run_id }}
+          restore-keys: |
+            key-build-registry
 
       # Cache for buildkit (NOT USED right now - waiting for some speed assessment to figure out if it is worth it)
       - name: Buildkit cache for build stage
         id: cache-build-buildkit
-        uses: actions/cache/restore@v4
+        uses: actions/cache@v4
         with:
           path:
             ~/build-cache-buildkit
-          key: key-build-buildkit
+          key: key-build-buildkit-${{ github.sha }} #-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            key-build-buildkit
 
       - name: "Configure and start registry proxy cache"
         run: |
@@ -104,15 +117,6 @@ jobs:
           # Force a cache write
           date > ~/integration-images/.timestamp
 
-      # Force save the artifacts
-      - name: Cache for build artifacts
-        id: cache-artifacts
-        uses: actions/cache/save@v4
-        if: always()
-        with:
-          path:
-            ~/integration-images
-          key: key-build-artifacts
 
 
   test-integration:
@@ -144,7 +148,7 @@ jobs:
         with:
           path:
             ~/integration-images
-          key: key-build-artifacts
+          key: key-build-artifacts-${{ github.sha }} # ${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: "DO"
         run: |
