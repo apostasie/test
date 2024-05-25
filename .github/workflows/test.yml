@@ -32,7 +32,9 @@ jobs:
       CONTAINERD_VERSION: "${{ matrix.containerd }}"
 
     steps:
-      - uses: actions/cache@v4
+      - name: cache-registry-build
+        id: cache-registry-build
+        uses: actions/cache@v4
         with:
           path:
             ~/registry-proxy-cache
@@ -99,8 +101,8 @@ steps:
       - uses: actions/checkout@v4.1.6
         with:
           fetch-depth: 1
-      - name: cache-reg
-        id: cache-reg
+      - name: cache-registry-mirror
+        id: cache-registry-mirror
         uses: actions/cache@v4
         with:
           path:
